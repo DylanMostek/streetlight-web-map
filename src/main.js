@@ -8,14 +8,12 @@ import MapView from "@arcgis/core/views/MapView";
 import FeatureLayer from "@arcgis/core/layers/FeatureLayer";
 import Search from "@arcgis/core/widgets/Search";
 
-// IMPORTANT for GitHub Pages
 esriConfig.assetsPath = "./assets";
 
-// Feature layer URL (Layer 0)
 const STREETLIGHTS_URL =
   "https://services8.arcgis.com/jzdN07B7ZhRTxuzU/arcgis/rest/services/Streetlights_Inspections/FeatureServer/0";
 
-// ---- Layout ----
+// --- Layout ---
 document.querySelector("#app").innerHTML = `
   <div id="app-container">
     <div id="sidebar">
@@ -56,30 +54,25 @@ document.querySelector("#app").innerHTML = `
   </div>
 `;
 
-// ---- VISIBLE POINT RENDERER (THIS IS THE KEY FIX) ----
+// ---- Make points VERY visible ----
 const pointRenderer = {
   type: "simple",
   symbol: {
     type: "simple-marker",
     style: "circle",
-    size: 8,
-    color: "#ef4444",
-    outline: {
-      color: "#ffffff",
-      width: 1,
-    },
+    size: 12, // bigger so you can't miss it
+    color: [239, 68, 68, 1], // bright red
+    outline: { color: [255, 255, 255, 1], width: 1.5 },
   },
 };
 
-// ---- Feature Layer ----
 const streetlightsLayer = new FeatureLayer({
   url: STREETLIGHTS_URL,
   outFields: ["*"],
   title: "Streetlights",
-  renderer: pointRenderer, // 👈 THIS MAKES THEM VISIBLE
+  renderer: pointRenderer,
 });
 
-// ---- Map + View ----
 const map = new Map({
   basemap: "streets-navigation-vector",
   layers: [streetlightsLayer],
@@ -88,15 +81,14 @@ const map = new Map({
 const view = new MapView({
   container: "viewDiv",
   map,
-  center: [-96.7026, 40.8136], // Lincoln, NE
+  center: [-96.7026, 40.8136],
   zoom: 13,
 });
 
-// ---- Search ----
 const search = new Search({ view });
 view.ui.add(search, "top-left");
 
-// ---- UI ----
+// UI
 const statusText = document.getElementById("statusText");
 const toggleLayer = document.getElementById("toggleLayer");
 const priorityFilter = document.getElementById("priorityFilter");
@@ -104,28 +96,92 @@ const clearFilterBtn = document.getElementById("clearFilterBtn");
 const resetViewBtn = document.getElementById("resetViewBtn");
 const clusterToggle = document.getElementById("clusterToggle");
 
-// ---- Helpers ----
 function setStatus(msg) {
   statusText.textContent = msg;
 }
 
-function guessPriorityField(layer) {
-  const candidates = ["Priority", "priority", "PRIORITY"];
-  const fields = (layer.fields || []).map((f) => f.name);
-  return candidates.find((c) => fields.includes(c)) || null;
+// ---------- Priority detection (THE REAL FIX) ----------
+let priorityFieldName = null;
+// maps UI label -> coded value (or string) stored in the feature layer
+let priorityValueMap = null;
+
+function buildPriorityMappingFromDomain(layer) {
+  const fields = layer.fields || [];
+
+  // Find a field with a coded value domain that includes High/Medium/Low
+  for (const f of fields) {
+    const domain = f.domain;
+    if (!domain || domain.type !== "codedValue") continue;
+
+    const coded = domain.codedValues || [];
+    const names = coded.map((cv) => String(cv.name).toLowerCase());
+
+    const hasHigh = names.some((n) => n.includes("high"));
+    const hasMed = names.some((n) => n.includes("medium") || n.includes("med"));
+    const hasLow = names.some((n) => n.includes("low"));
+
+    if (hasHigh && hasMed && hasLow) {
+      priorityFieldName = f.name;
+
+      // Build label -> code mapping
+      const map = {};
+      for (const cv of coded) {
+        const nm = String(cv.name).toLowerCase();
+        if (nm.includes("high")) map["High Priority"] = cv.code;
+        if (nm.includes("medium") || nm.includes("med")) map["Medium Priority"] = cv.code;
+        if (nm.includes("low")) map["Low Priority"] = cv.code;
+      }
+
+      // If your domain labels are literally "High Priority", this still works.
+      // If they're "High", this still works.
+      priorityValueMap = map;
+
+      console.log("✅ Priority field detected:", priorityFieldName);
+      console.log("✅ Priority mapping:", priorityValueMap);
+      return;
+    }
+  }
+
+  // If we get here, we didn’t find a coded domain.
+  priorityFieldName = null;
+  priorityValueMap = null;
+  console.warn("⚠️ No coded priority domain found. Fields:", fields.map((x) => x.name));
+}
+
+function sqlValue(v) {
+  // numbers should NOT be in quotes, strings should be in quotes
+  if (typeof v === "number") return String(v);
+  if (typeof v === "boolean") return v ? "1" : "0";
+  return `'${String(v).replaceAll("'", "''")}'`;
 }
 
 function applyPriorityFilter() {
   const val = priorityFilter.value;
+
   if (val === "All") {
     streetlightsLayer.definitionExpression = null;
     return;
   }
 
-  const field = guessPriorityField(streetlightsLayer);
-  if (!field) return;
+  // If we detected a coded domain mapping, use it
+  if (priorityFieldName && priorityValueMap && priorityValueMap[val] !== undefined) {
+    const code = priorityValueMap[val];
+    streetlightsLayer.definitionExpression = `${priorityFieldName} = ${sqlValue(code)}`;
+    return;
+  }
 
-  streetlightsLayer.definitionExpression = `${field} = '${val}'`;
+  // Fallback: try a literal text match on common field names
+  const candidates = ["Priority", "priority", "PRIORITY", "OutagePriority", "outage_priority"];
+  const fields = (streetlightsLayer.fields || []).map((f) => f.name);
+  const found = candidates.find((c) => fields.includes(c));
+
+  if (!found) {
+    streetlightsLayer.definitionExpression = null;
+    setStatus("Loaded (filter field not found — showing all)");
+    return;
+  }
+
+  streetlightsLayer.definitionExpression = `${found} = ${sqlValue(val)}`;
 }
 
 async function updateLoadedCount() {
@@ -135,8 +191,9 @@ async function updateLoadedCount() {
     q.returnGeometry = false;
     const count = await streetlightsLayer.queryFeatureCount(q);
     setStatus(`Loaded: ${count} features`);
-  } catch {
-    setStatus("Loaded");
+  } catch (e) {
+    console.error(e);
+    setStatus("Loaded (count failed)");
   }
 }
 
@@ -144,14 +201,17 @@ async function updateLoadedCount() {
 const clusterConfig = {
   type: "cluster",
   clusterRadius: "60px",
+  popupTemplate: {
+    title: "Cluster summary",
+    content: "This cluster represents {cluster_count} streetlights.",
+  },
 };
 
 function applyClustering() {
-  streetlightsLayer.featureReduction =
-    clusterToggle.checked ? clusterConfig : null;
+  streetlightsLayer.featureReduction = clusterToggle.checked ? clusterConfig : null;
 }
 
-// ---- Events ----
+// ---- Wire up UI ----
 toggleLayer.addEventListener("change", () => {
   streetlightsLayer.visible = toggleLayer.checked;
 });
@@ -171,11 +231,21 @@ resetViewBtn.addEventListener("click", () => {
   view.goTo({ center: [-96.7026, 40.8136], zoom: 13 });
 });
 
-clusterToggle.addEventListener("change", applyClustering);
-
-// ---- Load ----
-streetlightsLayer.when(async () => {
+clusterToggle.addEventListener("change", () => {
   applyClustering();
-  applyPriorityFilter();
-  await updateLoadedCount();
 });
+
+// ---- Load handling ----
+streetlightsLayer
+  .when(async () => {
+    // Detect the real priority field + mapping FIRST
+    buildPriorityMappingFromDomain(streetlightsLayer);
+
+    applyClustering();
+    applyPriorityFilter();
+    await updateLoadedCount();
+  })
+  .catch((err) => {
+    console.error("Layer failed to load:", err);
+    setStatus("Layer failed to load — check console");
+  });
