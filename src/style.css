@@ -1,0 +1,80 @@
+html,
+body {
+  height: 100%;
+  margin: 0;
+}
+
+#app {
+  height: 100vh;
+  width: 100vw;
+}
+
+/* This is the key: your layout wrapper */
+#app-container {
+  height: 100%;
+  width: 100%;
+  display: grid;
+  grid-template-columns: 320px 1fr;
+}
+
+/* Sidebar styling */
+#sidebar {
+  background: #0f172a;
+  color: #e2e8f0;
+  padding: 14px;
+  font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+}
+
+#sidebar h2 {
+  margin: 0 0 6px 0;
+  font-size: 16px;
+}
+
+.subtitle {
+  margin: 0 0 12px 0;
+  font-size: 12px;
+  opacity: 0.8;
+}
+
+.section {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 14px;
+  padding: 12px;
+  margin-bottom: 12px;
+}
+
+.info {
+  margin-top: 8px;
+  font-size: 12px;
+  opacity: 0.85;
+}
+
+select,
+button {
+  width: 100%;
+  font-size: 13px;
+  padding: 10px;
+  border-radius: 12px;
+  border: 1px solid rgba(226, 232, 240, 0.22);
+  background: rgba(15, 23, 42, 0.65);
+  color: #e2e8f0;
+  outline: none;
+  margin-top: 8px;
+}
+
+button {
+  cursor: pointer;
+}
+
+.hint {
+  font-size: 12px;
+  opacity: 0.75;
+  margin-top: 8px;
+}
+
+/* THIS is the other key: map div MUST have height/width */
+#viewDiv {
+  height: 100%;
+  width: 100%;
+}
