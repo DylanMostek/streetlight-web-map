@@ -28,7 +28,7 @@ It allows users to visualize streetlight inspection points, apply priority-based
 
 ## Screenshots
 
-![Main Map View](screenshots/main.png)
+![Main Map View](screenshots2/main.png)
 
 ---
 
