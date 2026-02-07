@@ -16,6 +16,7 @@ It allows users to visualize streetlight inspection points, apply priority-based
 
 ## Features
 
+
 - Interactive map with ArcGIS basemap
 - Streetlight inspection FeatureLayer
 - Priority-based filtering (High / Medium / Low)
