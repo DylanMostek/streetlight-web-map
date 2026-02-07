@@ -8,14 +8,14 @@ import MapView from "@arcgis/core/views/MapView";
 import FeatureLayer from "@arcgis/core/layers/FeatureLayer";
 import Search from "@arcgis/core/widgets/Search";
 
-// ✅ IMPORTANT for GitHub Pages (assets served from /public/assets)
+// IMPORTANT for GitHub Pages
 esriConfig.assetsPath = "./assets";
 
-// ✅ Your layer URL (FeatureServer/0)
+// Feature layer URL (Layer 0)
 const STREETLIGHTS_URL =
   "https://services8.arcgis.com/jzdN07B7ZhRTxuzU/arcgis/rest/services/Streetlights_Inspections/FeatureServer/0";
 
-// --- Build your layout (sidebar + map) ---
+// ---- Layout ----
 document.querySelector("#app").innerHTML = `
   <div id="app-container">
     <div id="sidebar">
@@ -56,13 +56,30 @@ document.querySelector("#app").innerHTML = `
   </div>
 `;
 
-// --- ArcGIS layer ---
+// ---- VISIBLE POINT RENDERER (THIS IS THE KEY FIX) ----
+const pointRenderer = {
+  type: "simple",
+  symbol: {
+    type: "simple-marker",
+    style: "circle",
+    size: 8,
+    color: "#ef4444",
+    outline: {
+      color: "#ffffff",
+      width: 1,
+    },
+  },
+};
+
+// ---- Feature Layer ----
 const streetlightsLayer = new FeatureLayer({
   url: STREETLIGHTS_URL,
   outFields: ["*"],
   title: "Streetlights",
+  renderer: pointRenderer, // 👈 THIS MAKES THEM VISIBLE
 });
 
+// ---- Map + View ----
 const map = new Map({
   basemap: "streets-navigation-vector",
   layers: [streetlightsLayer],
@@ -75,11 +92,11 @@ const view = new MapView({
   zoom: 13,
 });
 
-// Search widget
+// ---- Search ----
 const search = new Search({ view });
 view.ui.add(search, "top-left");
 
-// UI elements
+// ---- UI ----
 const statusText = document.getElementById("statusText");
 const toggleLayer = document.getElementById("toggleLayer");
 const priorityFilter = document.getElementById("priorityFilter");
@@ -92,14 +109,10 @@ function setStatus(msg) {
   statusText.textContent = msg;
 }
 
-// Try to detect a "Priority" field in your layer (since field names vary)
 function guessPriorityField(layer) {
-  const candidates = ["Priority", "priority", "PRIORITY", "OutagePriority", "outage_priority"];
+  const candidates = ["Priority", "priority", "PRIORITY"];
   const fields = (layer.fields || []).map((f) => f.name);
-  for (const c of candidates) {
-    if (fields.includes(c)) return c;
-  }
-  return null;
+  return candidates.find((c) => fields.includes(c)) || null;
 }
 
 function applyPriorityFilter() {
@@ -110,15 +123,8 @@ function applyPriorityFilter() {
   }
 
   const field = guessPriorityField(streetlightsLayer);
-  if (!field) {
-    // If we can't find a priority field, don't break the map.
-    console.warn("No Priority field found. Available fields:", streetlightsLayer.fields?.map(f => f.name));
-    setStatus("Loaded (filter field not found — showing all)");
-    streetlightsLayer.definitionExpression = null;
-    return;
-  }
+  if (!field) return;
 
-  // Basic SQL where clause
   streetlightsLayer.definitionExpression = `${field} = '${val}'`;
 }
 
@@ -129,27 +135,23 @@ async function updateLoadedCount() {
     q.returnGeometry = false;
     const count = await streetlightsLayer.queryFeatureCount(q);
     setStatus(`Loaded: ${count} features`);
-  } catch (e) {
-    console.error(e);
-    setStatus("Loaded (count failed)");
+  } catch {
+    setStatus("Loaded");
   }
 }
 
-// --- Cluster setup ---
+// ---- Clustering ----
 const clusterConfig = {
   type: "cluster",
   clusterRadius: "60px",
-  popupTemplate: {
-    title: "Cluster summary",
-    content: "This cluster represents {cluster_count} streetlights.",
-  },
 };
 
 function applyClustering() {
-  streetlightsLayer.featureReduction = clusterToggle.checked ? clusterConfig : null;
+  streetlightsLayer.featureReduction =
+    clusterToggle.checked ? clusterConfig : null;
 }
 
-// ---- Wire up UI ----
+// ---- Events ----
 toggleLayer.addEventListener("change", () => {
   streetlightsLayer.visible = toggleLayer.checked;
 });
@@ -169,16 +171,11 @@ resetViewBtn.addEventListener("click", () => {
   view.goTo({ center: [-96.7026, 40.8136], zoom: 13 });
 });
 
-clusterToggle.addEventListener("change", () => {
-  applyClustering();
-});
+clusterToggle.addEventListener("change", applyClustering);
 
-// ---- Load handling ----
+// ---- Load ----
 streetlightsLayer.when(async () => {
   applyClustering();
   applyPriorityFilter();
   await updateLoadedCount();
-}).catch((err) => {
-  console.error("Layer failed to load:", err);
-  setStatus("Layer failed to load — check console");
 });
