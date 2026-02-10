@@ -1,1 +1,0 @@
-import{b8 as s,b9 as i,A as o}from"./index-DIm_k8VX.js";import{p as n}from"./ref-DRU1teyv.js";const a=s(class extends i{constructor(){super(...arguments),this.key=o}render(r,e){return this.key=r,e}update(r,[e,t]){return e!==this.key&&(n(r),this.key=e),t}});export{a as i};
