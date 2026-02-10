@@ -11,7 +11,7 @@ import Search from "@arcgis/core/widgets/Search";
 // ✅ Fix for GitHub Pages: load ArcGIS assets from Esri CDN
 esriConfig.assetsPath = "https://js.arcgis.com/4.30/@arcgis/core/assets";
 
-// OPTIONAL: If your basemap ever shows blank on GitHub Pages, uncomment and add a key.
+// OPTIONAL: basemap key if you ever need it
 // esriConfig.apiKey = "PASTE_YOUR_ARCGIS_API_KEY_HERE";
 
 const STREETLIGHTS_URL =
@@ -35,16 +35,23 @@ document.querySelector("#app").innerHTML = `
       <div class="section">
         <div style="font-size:13px; margin-bottom:8px;">Filter</div>
 
-        <!-- Domain codes for Priority are literally: High / Medium / Low -->
+        <!-- IMPORTANT: Domain codes are literally: High / Medium / Low -->
         <select id="priorityFilter">
           <option value="All" selected>All</option>
           <option value="High">High Priority</option>
           <option value="Medium">Medium Priority</option>
           <option value="Low">Low Priority</option>
+          <option value="(null)">Priority is blank (null)</option>
         </select>
 
-        <button id="clearFilterBtn">Clear filter</button>
-        <button id="resetViewBtn">Reset view</button>
+        <div style="display:flex; gap:8px; margin-top:10px;">
+          <button id="clearFilterBtn" style="flex:1;">Clear</button>
+          <button id="resetViewBtn" style="flex:1;">Reset view</button>
+        </div>
+
+        <div class="hint" style="margin-top:10px;">
+          Note: Most features currently have Priority = null, so filtering High/Medium/Low may show only a few.
+        </div>
       </div>
 
       <div class="section">
@@ -57,8 +64,7 @@ document.querySelector("#app").innerHTML = `
 
       <div class="section">
         <div style="font-size:13px; margin-bottom:8px;">Debug</div>
-        <button id="debugBtn">Debug: Run test query</button>
-        <pre id="debugOut" style="white-space:pre-wrap; font-size:12px; margin-top:10px; background:#0b1220; color:#dbeafe; padding:10px; border-radius:10px; max-height:220px; overflow:auto;">(click the button)</pre>
+        <button id="zoomBtn">Zoom to sample points</button>
       </div>
     </div>
 
@@ -73,25 +79,21 @@ const priorityFilter = document.getElementById("priorityFilter");
 const clearFilterBtn = document.getElementById("clearFilterBtn");
 const resetViewBtn = document.getElementById("resetViewBtn");
 const clusterToggle = document.getElementById("clusterToggle");
-const debugBtn = document.getElementById("debugBtn");
-const debugOut = document.getElementById("debugOut");
+const zoomBtn = document.getElementById("zoomBtn");
 
 function setStatus(msg) {
   statusText.textContent = msg;
 }
-function setDebug(text) {
-  debugOut.textContent = text;
-}
 
-// ---- Make points VERY visible ----
+// ---- Make points SUPER visible ----
 const pointRenderer = {
   type: "simple",
   symbol: {
     type: "simple-marker",
     style: "circle",
-    size: 14,
-    color: [239, 68, 68, 1],
-    outline: { color: [255, 255, 255, 1], width: 2 },
+    size: 16,
+    color: [239, 68, 68, 1], // bright red
+    outline: { color: [255, 255, 255, 1], width: 2.5 },
   },
 };
 
@@ -134,13 +136,38 @@ const view = new MapView({
 const search = new Search({ view });
 view.ui.add(search, "top-left");
 
-// ---- Clustering ----
+// ---- Clustering (make clusters OBVIOUS) ----
 const clusterConfig = {
   type: "cluster",
-  clusterRadius: "60px",
+  clusterRadius: "70px",
+  labelingInfo: [
+    {
+      deconflictionStrategy: "none",
+      labelExpressionInfo: { expression: "Text($feature.cluster_count, '#,###')" },
+      symbol: {
+        type: "text",
+        color: "white",
+        haloColor: "black",
+        haloSize: 1,
+        font: { size: 12, weight: "bold" },
+      },
+      labelPlacement: "center-center",
+    },
+  ],
   popupTemplate: {
-    title: "Cluster summary",
+    title: "Cluster",
     content: "This cluster represents {cluster_count} streetlights.",
+  },
+  // Big blue cluster bubbles so you SEE them
+  renderer: {
+    type: "simple",
+    symbol: {
+      type: "simple-marker",
+      style: "circle",
+      size: 26,
+      color: [59, 130, 246, 0.9],
+      outline: { color: [255, 255, 255, 1], width: 2 },
+    },
   },
 };
 
@@ -149,7 +176,7 @@ function applyClustering() {
 }
 
 // ---- Filtering ----
-function sqlValue(v) {
+function sqlString(v) {
   return `'${String(v).replaceAll("'", "''")}'`;
 }
 
@@ -161,8 +188,13 @@ function applyPriorityFilter() {
     return;
   }
 
-  // Domain codes: "High", "Medium", "Low"
-  streetlightsLayer.definitionExpression = `Priority = ${sqlValue(val)}`;
+  if (val === "(null)") {
+    streetlightsLayer.definitionExpression = "Priority IS NULL";
+    return;
+  }
+
+  // Domain codes are: "High", "Medium", "Low"
+  streetlightsLayer.definitionExpression = `Priority = ${sqlString(val)}`;
 }
 
 async function updateLoadedCount() {
@@ -178,67 +210,27 @@ async function updateLoadedCount() {
   }
 }
 
-// ---- Debug test query ----
-async function runDebugQuery() {
-  setDebug("Running queries…");
-
+// ---- Zoom to actual points (NOT the broken world extent) ----
+async function zoomToPoints() {
   try {
-    // count everything
-    const countQ = streetlightsLayer.createQuery();
-    countQ.where = "1=1";
-    countQ.returnGeometry = false;
+    const q = streetlightsLayer.createQuery();
+    q.where = streetlightsLayer.definitionExpression || "1=1";
+    q.returnGeometry = true;
+    q.num = 2000;
 
-    const total = await streetlightsLayer.queryFeatureCount(countQ);
+    const res = await streetlightsLayer.queryFeatures(q);
+    const geoms = res.features.map((f) => f.geometry).filter(Boolean);
 
-    // sample 5 features
-    const featQ = streetlightsLayer.createQuery();
-    featQ.where = "1=1";
-    featQ.outFields = ["OBJECTID", "LightID", "Status", "Priority", "Condition", "NeedsReview"];
-    featQ.returnGeometry = true;
-    featQ.num = 5;
-
-    const feats = await streetlightsLayer.queryFeatures(featQ);
-
-    // extent
-    const extQ = streetlightsLayer.createQuery();
-    extQ.where = "1=1";
-    const extentRes = await streetlightsLayer.queryExtent(extQ);
-
-    const samples = (feats.features || []).map((f) => ({
-      OBJECTID: f.attributes?.OBJECTID,
-      LightID: f.attributes?.LightID,
-      Status: f.attributes?.Status,
-      Priority: f.attributes?.Priority,
-      Condition: f.attributes?.Condition,
-      NeedsReview: f.attributes?.NeedsReview,
-      geometry: f.geometry ? { x: f.geometry.x, y: f.geometry.y, sr: f.geometry.spatialReference?.wkid } : null,
-    }));
-
-    setDebug(
-      [
-        `✅ queryFeatureCount(where="1=1") = ${total}`,
-        "",
-        `✅ sample features returned = ${samples.length}`,
-        JSON.stringify(samples, null, 2),
-        "",
-        `✅ queryExtent(where="1=1")`,
-        JSON.stringify(extentRes?.extent ? {
-          xmin: extentRes.extent.xmin,
-          ymin: extentRes.extent.ymin,
-          xmax: extentRes.extent.xmax,
-          ymax: extentRes.extent.ymax,
-          wkid: extentRes.extent.spatialReference?.wkid
-        } : null, null, 2),
-      ].join("\n")
-    );
-
-    // If we got a real extent (not null), zoom to it
-    if (extentRes?.extent) {
-      await view.goTo(extentRes.extent.expand(1.3));
+    if (!geoms.length) {
+      alert("No geometries returned for current filter.");
+      return;
     }
-  } catch (err) {
-    console.error(err);
-    setDebug(`❌ Debug query failed:\n${String(err?.message || err)}`);
+
+    // goTo supports an array of geometries and computes an extent for them
+    await view.goTo(geoms, { duration: 700 });
+  } catch (e) {
+    console.error(e);
+    alert("Zoom failed. Check console.");
   }
 }
 
@@ -250,23 +242,26 @@ toggleLayer.addEventListener("change", () => {
 priorityFilter.addEventListener("change", async () => {
   applyPriorityFilter();
   await updateLoadedCount();
+  await zoomToPoints();
 });
 
 clearFilterBtn.addEventListener("click", async () => {
   priorityFilter.value = "All";
   streetlightsLayer.definitionExpression = null;
   await updateLoadedCount();
+  await zoomToPoints();
 });
 
 resetViewBtn.addEventListener("click", () => {
   view.goTo({ center: [-96.7026, 40.8136], zoom: 13 });
 });
 
-clusterToggle.addEventListener("change", () => {
+clusterToggle.addEventListener("change", async () => {
   applyClustering();
+  await updateLoadedCount();
 });
 
-debugBtn.addEventListener("click", runDebugQuery);
+zoomBtn.addEventListener("click", zoomToPoints);
 
 // ---- Load handling ----
 (async () => {
@@ -274,13 +269,12 @@ debugBtn.addEventListener("click", runDebugQuery);
     setStatus("Loading layer…");
     await streetlightsLayer.load();
 
-    setStatus("Layer loaded. Waiting for view…");
+    setStatus("Waiting for view…");
     await view.when();
 
-    // This is the key: get the actual layer view so we know it’s in the map pipeline
+    // Ensure layer is actually in view pipeline
     const layerView = await view.whenLayerView(streetlightsLayer);
 
-    // Watch for updating so we know if it’s stuck fetching
     layerView.watch("updating", (u) => {
       if (u) setStatus("Layer updating…");
       else updateLoadedCount();
@@ -288,13 +282,11 @@ debugBtn.addEventListener("click", runDebugQuery);
 
     applyClustering();
     applyPriorityFilter();
-    await updateLoadedCount();
 
-    // Auto-run debug once on load so you instantly see what the service returns
-    await runDebugQuery();
+    await updateLoadedCount();
+    await zoomToPoints();
   } catch (err) {
     console.error(err);
     setStatus("Layer failed to load — open console");
-    setDebug(`❌ Load failed:\n${String(err?.message || err)}`);
   }
 })();
