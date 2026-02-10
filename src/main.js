@@ -8,7 +8,11 @@ import MapView from "@arcgis/core/views/MapView";
 import FeatureLayer from "@arcgis/core/layers/FeatureLayer";
 import Search from "@arcgis/core/widgets/Search";
 
-esriConfig.assetsPath = "./assets";
+// ✅ Fix for GitHub Pages: load ArcGIS assets from Esri CDN (no local ./assets needed)
+esriConfig.assetsPath = "https://js.arcgis.com/4.30/@arcgis/core/assets";
+
+// OPTIONAL: If your basemap still shows blank on GitHub Pages, uncomment and add a key.
+// esriConfig.apiKey = "YOUR_ARCGIS_API_KEY_HERE";
 
 const STREETLIGHTS_URL =
   "https://services8.arcgis.com/jzdN07B7ZhRTxuzU/arcgis/rest/services/Streetlights_Inspections/FeatureServer/0";
@@ -128,12 +132,11 @@ function buildPriorityMappingFromDomain(layer) {
       for (const cv of coded) {
         const nm = String(cv.name).toLowerCase();
         if (nm.includes("high")) map["High Priority"] = cv.code;
-        if (nm.includes("medium") || nm.includes("med")) map["Medium Priority"] = cv.code;
+        if (nm.includes("medium") || nm.includes("med"))
+          map["Medium Priority"] = cv.code;
         if (nm.includes("low")) map["Low Priority"] = cv.code;
       }
 
-      // If your domain labels are literally "High Priority", this still works.
-      // If they're "High", this still works.
       priorityValueMap = map;
 
       console.log("✅ Priority field detected:", priorityFieldName);
@@ -145,7 +148,10 @@ function buildPriorityMappingFromDomain(layer) {
   // If we get here, we didn’t find a coded domain.
   priorityFieldName = null;
   priorityValueMap = null;
-  console.warn("⚠️ No coded priority domain found. Fields:", fields.map((x) => x.name));
+  console.warn(
+    "⚠️ No coded priority domain found. Fields:",
+    fields.map((x) => x.name)
+  );
 }
 
 function sqlValue(v) {
@@ -164,14 +170,26 @@ function applyPriorityFilter() {
   }
 
   // If we detected a coded domain mapping, use it
-  if (priorityFieldName && priorityValueMap && priorityValueMap[val] !== undefined) {
+  if (
+    priorityFieldName &&
+    priorityValueMap &&
+    priorityValueMap[val] !== undefined
+  ) {
     const code = priorityValueMap[val];
-    streetlightsLayer.definitionExpression = `${priorityFieldName} = ${sqlValue(code)}`;
+    streetlightsLayer.definitionExpression = `${priorityFieldName} = ${sqlValue(
+      code
+    )}`;
     return;
   }
 
   // Fallback: try a literal text match on common field names
-  const candidates = ["Priority", "priority", "PRIORITY", "OutagePriority", "outage_priority"];
+  const candidates = [
+    "Priority",
+    "priority",
+    "PRIORITY",
+    "OutagePriority",
+    "outage_priority",
+  ];
   const fields = (streetlightsLayer.fields || []).map((f) => f.name);
   const found = candidates.find((c) => fields.includes(c));
 
