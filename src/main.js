@@ -37,7 +37,7 @@ document.querySelector("#app").innerHTML = `
       <div class="section">
         <div style="font-size:13px; margin-bottom:8px;">Filter</div>
 
-        <!-- IMPORTANT: Your domain codes are literally: High / Medium / Low -->
+        <!-- Your domain codes are literally: High / Medium / Low -->
         <select id="priorityFilter">
           <option value="All" selected>All</option>
           <option value="High">High Priority</option>
@@ -106,14 +106,14 @@ const streetlightsGraphics = new GraphicsLayer({
 const dotSymbol = {
   type: "simple-marker",
   style: "circle",
-  size: 16,
+  size: 18,
   color: [239, 68, 68, 1],
-  outline: { color: [255, 255, 255, 1], width: 2.5 },
+  outline: { color: [255, 255, 255, 1], width: 3 },
 };
 
 const map = new Map({
   basemap: "streets-navigation-vector",
-  layers: [streetlightsGraphics], // only the graphics are drawn
+  layers: [streetlightsGraphics],
 });
 
 const view = new MapView({
@@ -133,7 +133,6 @@ async function refreshStreetlights() {
   try {
     setStatus("Loading streetlights…");
 
-    // Query features from the feature service
     const q = streetlightsSource.createQuery();
     q.where = where;
     q.returnGeometry = true;
@@ -143,10 +142,8 @@ async function refreshStreetlights() {
     const res = await streetlightsSource.queryFeatures(q);
     const feats = res.features || [];
 
-    // Clear previous graphics
     streetlightsGraphics.removeAll();
 
-    // Convert each feature into a Graphic so it ALWAYS draws
     for (const f of feats) {
       if (!f.geometry) continue;
 
@@ -171,7 +168,6 @@ async function refreshStreetlights() {
     }
 
     setStatus(`Loaded: ${feats.length} streetlights`);
-
     return feats;
   } catch (e) {
     console.error(e);
