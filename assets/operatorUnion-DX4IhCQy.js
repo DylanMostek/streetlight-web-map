@@ -1,0 +1,1 @@
+import{s as o}from"./SimpleGeometryCursor-B92kdZ15.js";import"./Point2D-CE_8fSwp.js";import{g as u}from"./ProjectionTransformation-Dma8H91t.js";import"./Envelope2D-B-iKXdqf.js";const t=new u;function m(n,r,e){return t.execute(n,r,e,null)}function f(n,r){return t.executeMany(new o(n),r,null).next()}function l(){return t.supportsCurves()}export{f as o,m as r,l as s};
